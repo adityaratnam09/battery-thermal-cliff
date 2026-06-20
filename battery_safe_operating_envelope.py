@@ -387,7 +387,7 @@ plt.show()
 # FIGURE 8 — Sensitivity Analysis: Bruggeman Coefficient ±10%
 # ============================================================
 print("Generating Figure 8: Sensitivity analysis...")
-C_RATES_SENS = np.array([0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5])
+C_RATES_SENS = np.array([0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0])
 T_AMB = 298
 BRUGGEMAN_BASE = 1.5  # Chen2020 default for positive electrode
 
