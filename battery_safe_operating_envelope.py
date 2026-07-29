@@ -351,24 +351,20 @@ for c_rate in [2.25, 2.5]:
     p["Ambient temperature [K]"] = 298
     exp = pybamm.Experiment([f"Discharge at {c_rate}C until 2.5V"])
     sim = pybamm.Simulation(model, experiment=exp, parameter_values=p)
-    sim.solve(solver=pybamm.CasadiSolver(mode="fast"))
+    sim.solve(solver=pybamm.CasadiSolver(mode="fast", atol=1e-9, rtol=1e-7))
     sims[c_rate] = sim.solution
     t_end = sim.solution["Time [s]"].entries[-1]
     print(f"{c_rate}C: discharge ended at {t_end:.0f} s")
 
-t_end_25  = sims[2.5]["Time [s]"].entries[-1]
-snap_times = np.linspace(0, t_end_25, 6)
-cmap       = cm.get_cmap('plasma_r', len(snap_times))
+cmap = cm.get_cmap('plasma_r', 6)
 
 print("\n── Electrolyte concentration vs. position key figures ──")
 for c_rate in [2.25, 2.5]:
     sol = sims[c_rate]
     t   = sol["Time [s]"].entries
     ce  = sol["Electrolyte concentration [mol.m-3]"].entries
-    n_pos = int(ce.shape[0] * (L_pos / L_total))
-    c_pos_end = np.clip(ce[-n_pos:, -1], 0, None).mean()
-    c_pos_143 = np.clip(ce[-n_pos:, np.argmin(np.abs(t - t_end_25))], 0, None).mean()
-    print(f"  {c_rate}C | t_end={t[-1]:.0f}s | pos.elec c_e at end: {c_pos_end:.1f} | at 143s: {c_pos_143:.1f} mol/m³")
+    c_collector_end = max(ce[-1, -1], 0.0)
+    print(f"  {c_rate}C | t_end={t[-1]:.0f}s | c_e AT current collector (true end): {c_collector_end:.1f} mol/m³")
 
 fig4, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
 fig4.patch.set_facecolor('white')
@@ -378,9 +374,12 @@ for ax, c_rate, title in zip(axes, [2.25, 2.5], ['2.25C', '2.5C']):
     t_all = sol["Time [s]"].entries
     ce_all = sol["Electrolyte concentration [mol.m-3]"].entries
 
+    t_end_this = t_all[-1]
+    snap_times_this = np.linspace(0, t_end_this, 6)
+
     x_µm = np.linspace(0, L_total, ce_all.shape[0])
 
-    for i, t_snap in enumerate(snap_times):
+    for i, t_snap in enumerate(snap_times_this):
         idx      = np.argmin(np.abs(t_all - t_snap))
         c_profile = np.clip(ce_all[:, idx], 0, None)
         actual_t  = t_all[idx]
@@ -419,13 +418,13 @@ for ax, c_rate, title in zip(axes, [2.25, 2.5], ['2.25C', '2.5C']):
 
 plt.suptitle(
     'Li\u207a Electrolyte Concentration vs. Position — SPMe, Chen2020, 298 K\n'
-    'Same six time snapshots (0\u2013143 s) shown for both panels',
+    'Six snapshots from 0 s to each case\'s own cutoff time',
     fontsize=11, fontweight='bold', y=1.02)
 plt.tight_layout()
 plt.savefig('figure4_conc.png', dpi=150, bbox_inches='tight', facecolor='white')
 plt.show()
 plt.close()
-print("\nSaved: fig4_conc.png")
+print("\nSaved: fig4_chen_conc.png")
 
 # ============================================================
 # FIGURE 5 — Ecker2015 Peak DT heatmap
@@ -835,14 +834,12 @@ for c_rate in prada_conc_rates:
     p["Ambient temperature [K]"] = 298
     exp = pybamm.Experiment([f"Discharge at {c_rate}C until {cutoff_v_prada}V"])
     sim = pybamm.Simulation(model, experiment=exp, parameter_values=p)
-    sim.solve(solver=pybamm.CasadiSolver(mode="fast"))
+    sim.solve(solver=pybamm.CasadiSolver(mode="fast", atol=1e-9, rtol=1e-7))
     sims_prada[c_rate] = sim.solution
     t_end = sim.solution["Time [s]"].entries[-1]
     print(f"{c_rate}C: discharge ended at {t_end:.0f} s")
 
-t_end_high = sims_prada[conc_high_rate]["Time [s]"].entries[-1]
-snap_times_prada = np.linspace(0, t_end_high, 6)
-cmap_prada = cm.get_cmap('plasma_r', len(snap_times_prada))
+cmap_prada = cm.get_cmap('plasma_r', 6)
 
 fig13, axes13 = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
 fig13.patch.set_facecolor('white')
@@ -853,9 +850,12 @@ for ax, c_rate, title in zip(axes13, prada_conc_rates,
     t_all = sol["Time [s]"].entries
     ce_all = sol["Electrolyte concentration [mol.m-3]"].entries
 
+    t_end_this = t_all[-1]
+    snap_times_this = np.linspace(0, t_end_this, 6)
+
     x_um = np.linspace(0, Lp_total, ce_all.shape[0])
 
-    for i, t_snap in enumerate(snap_times_prada):
+    for i, t_snap in enumerate(snap_times_this):
         idx      = np.argmin(np.abs(t_all - t_snap))
         c_profile = np.clip(ce_all[:, idx], 0, None)
         actual_t  = t_all[idx]
@@ -894,7 +894,7 @@ for ax, c_rate, title in zip(axes13, prada_conc_rates,
 
 plt.suptitle(
     'Li\u207a Electrolyte Concentration vs. Position — SPMe, Prada2013 (LFP), 298 K\n'
-    f'{prada_conc_rates[0]}C vs. {prada_conc_rates[1]:.2f}C (truncation-onset candidate)',
+    f'{prada_conc_rates[0]}C vs. {prada_conc_rates[1]:.2f}C — each shown to its own cutoff time',
     fontsize=11, fontweight='bold', y=1.02)
 plt.tight_layout()
 plt.savefig('figure13_prada_conc.png', dpi=150, bbox_inches='tight', facecolor='white')
