@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 # If running in Jupyter/Colab and pybamm is not yet installed, uncomment:
-# !pip install pybamm -q
+#!pip install pybamm -q
 
 import math
 import pybamm
@@ -261,8 +262,8 @@ fig1, ax1 = plt.subplots(figsize=(11, 7))
 sns.heatmap(chen_rise, ax=ax1, fmt=".1f", cmap="YlOrRd",
             vmin=0, **HEATMAP_KW)
 ax1.set_title(
-    "Peak Temperature Rise DT (K)\n"
-    "Chen2020 Parameterization — NMC INR21700 M50 (5 Ah)",
+    "Peak Temperature Rise (ΔT, K)\n"
+    "Chen2020, SPMe",
     fontweight="bold", pad=12)
 ax1.set_xlabel("Discharge C-Rate")
 ax1.set_ylabel("Ambient Temperature (K)")
@@ -279,7 +280,7 @@ fig2, ax2 = plt.subplots(figsize=(11, 7))
 sns.heatmap(chen_dur, ax=ax2, fmt=".0f", cmap="viridis_r", **HEATMAP_KW)
 ax2.set_title(
     "Discharge Duration to Voltage Cutoff (s)\n"
-    "Chen2020 — Theoretical 2.5C Full Discharge = 1440 s",
+    "Chen2020, SPMe",
     fontweight="bold", pad=12)
 ax2.set_xlabel("Discharge C-Rate")
 ax2.set_ylabel("Ambient Temperature (K)")
@@ -288,6 +289,9 @@ for row in range(len(AMBIENT_TEMPS)):
     ax2.add_patch(plt.Rectangle(
         (last_col, row), 1, 1,
         fill=False, edgecolor="red", lw=2.5, zorder=5))
+ax2.text(0.01, 0.99, "Theoretical 2.5C full discharge: 1440 s",
+    transform=ax2.transAxes, ha="left", va="top", fontsize=9,
+    style="italic", color="dimgray")
 ax2.annotate("~90%\ntruncated",
     xy=(last_col + 0.5, 0), xytext=(last_col + 0.5, -0.8),
     xycoords="data", color="red", fontsize=9, fontweight="bold",
@@ -304,9 +308,9 @@ print("\nGenerating Figure 3 — Chen2020 Voltage-Time Profiles...")
 chen_curves = get_voltage_curves("Chen2020", T_amb=298)
 fig3, ax3 = plt.subplots(figsize=(9, 6))
 styles = {
-    2.00: ("tab:blue",  "-",  "2.0C  — near-complete discharge"),
-    2.25: ("tab:green", "--", "2.25C — late-stage cutoff"),
-    2.50: ("tab:red",   ":",  "2.5C  — early transport-limited cutoff"),
+    2.00: ("tab:blue",  "-",  "2.0C: near-complete discharge"),
+    2.25: ("tab:green", "--", "2.25C: late-stage cutoff"),
+    2.50: ("tab:red",   ":",  "2.5C: early transport-limited cutoff"),
 }
 cutoff_chen = None
 for C_rate, (color, ls, label) in styles.items():
@@ -318,8 +322,8 @@ ax3.axhline(y=cutoff_chen, color="gray", linestyle="--",
             linewidth=1.5, alpha=0.8,
             label=f"Voltage cutoff = {cutoff_chen:.2f} V")
 ax3.set_title(
-    "Voltage-Time Profiles at 298 K — Chen2020 (NMC INR21700 M50)\n"
-    "Transport-Limited Early Cutoff at 2.5C",
+    "Terminal Voltage vs. Time at 298 K\n"
+    "Chen2020, SPMe",
     fontweight="bold", pad=12)
 ax3.set_xlabel("Time (s)")
 ax3.set_ylabel("Terminal Voltage (V)")
@@ -405,7 +409,7 @@ for ax, c_rate, title in zip(axes, [2.25, 2.5], ['2.25C', '2.5C']):
                 fontsize=8.5, color=col, fontweight='bold')
 
     t_this = sims[c_rate]["Time [s]"].entries[-1]
-    ax.set_title(f'{title} — 298 K  (t_end = {t_this:.0f} s)',
+    ax.set_title(f'{title} (t_end = {t_this:.0f} s)',
                  fontsize=11, fontweight='bold')
     ax.set_xlim(0, L_total)
     ax.set_ylim(-50, c0 * 1.18)
@@ -417,8 +421,8 @@ for ax, c_rate, title in zip(axes, [2.25, 2.5], ['2.25C', '2.5C']):
     ax.tick_params(labelsize=10)
 
 plt.suptitle(
-    'Li\u207a Electrolyte Concentration vs. Position — SPMe, Chen2020, 298 K\n'
-    'Six snapshots from 0 s to each case\'s own cutoff time',
+    'Electrolyte Concentration vs. Position at 298 K\n'
+    'Chen2020, SPMe',
     fontsize=11, fontweight='bold', y=1.02)
 plt.tight_layout()
 plt.savefig('figure4_conc.png', dpi=150, bbox_inches='tight', facecolor='white')
@@ -434,8 +438,8 @@ fig5, ax4 = plt.subplots(figsize=(11, 7))
 sns.heatmap(ecker_rise, ax=ax4, fmt=".1f", cmap="YlOrRd",
             vmin=0, vmax=np.nanmax(chen_rise), **HEATMAP_KW)
 ax4.set_title(
-    "Peak Temperature Rise DT (K)\n"
-    "Ecker2015 Parameterization — NMC (7.5 Ah pouch)",
+    "Peak Temperature Rise (ΔT, K)\n"
+    "Ecker2015, SPMe",
     fontweight="bold", pad=12)
 ax4.set_xlabel("Discharge C-Rate")
 ax4.set_ylabel("Ambient Temperature (K)")
@@ -452,7 +456,7 @@ fig6, ax5 = plt.subplots(figsize=(11, 7))
 sns.heatmap(ecker_dur, ax=ax5, fmt=".0f", cmap="viridis_r", **HEATMAP_KW)
 ax5.set_title(
     "Discharge Duration to Voltage Cutoff (s)\n"
-    "Ecker2015 — NMC (7.5 Ah pouch)",
+    "Ecker2015, SPMe",
     fontweight="bold", pad=12)
 ax5.set_xlabel("Discharge C-Rate")
 ax5.set_ylabel("Ambient Temperature (K)")
@@ -481,8 +485,8 @@ ax6.axhline(y=cutoff_ecker, color="gray", linestyle="--",
             linewidth=1.5, alpha=0.8,
             label=f"Voltage cutoff = {cutoff_ecker:.2f} V")
 ax6.set_title(
-    "Voltage-Time Profiles at 298 K — Ecker2015 (NMC)\n"
-    "Transport-Limited Cutoff Comparison",
+    "Terminal Voltage vs. Time at 298 K\n"
+    "Ecker2015, SPMe",
     fontweight="bold", pad=12)
 ax6.set_xlabel("Time (s)")
 ax6.set_ylabel("Terminal Voltage (V)")
@@ -569,7 +573,7 @@ for label, res in results.items():
 ax7a.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5, label="2.5C")
 ax7a.set_xlabel("Discharge C-Rate", fontsize=11)
 ax7a.set_ylabel("Peak ΔT (K)", fontsize=11)
-ax7a.set_title("(a) Peak ΔT vs. C-Rate\nSensitivity to Bruggeman Coefficient",
+ax7a.set_title("(a) Peak ΔT vs. C-Rate",
                fontweight="bold")
 ax7a.legend(fontsize=9)
 ax7a.grid(True, alpha=0.3)
@@ -577,14 +581,14 @@ ax7a.grid(True, alpha=0.3)
 ax7b.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5)
 ax7b.set_xlabel("Discharge C-Rate", fontsize=11)
 ax7b.set_ylabel("Discharge Duration (s)", fontsize=11)
-ax7b.set_title("(b) Discharge Duration vs. C-Rate\nSensitivity to Bruggeman Coefficient",
+ax7b.set_title("(b) Discharge Duration vs. C-Rate",
                fontweight="bold")
 ax7b.legend(fontsize=9)
 ax7b.grid(True, alpha=0.3)
 
 fig8.suptitle(
-    "Sensitivity of Thermal Cliff to Positive Electrode Bruggeman Coefficient (±10%)\n"
-    "SPMe — Chen2020 (NMC INR21700 M50) — 298 K",
+    "Bruggeman Coefficient Sensitivity (±10%)\n"
+    "Chen2020, SPMe",
     fontsize=11, fontweight="bold"
 )
 plt.tight_layout()
@@ -660,7 +664,8 @@ for i, C_rate in enumerate(C_RATES_DFN):
     ax.grid(True, alpha=0.3)
 
 fig9.suptitle(
-    "SPMe vs. DFN Voltage-Time Profiles at 298 K — Chen2020 (NMC INR21700 M50)\n",
+    "Terminal Voltage vs. Time at 298 K\n"
+    "Chen2020, SPMe and DFN",
     fontsize=11, fontweight="bold"
 )
 plt.tight_layout()
@@ -670,15 +675,15 @@ plt.close()
 print("\nSaved: figure9_dfn_vs_spme.png")
 
 # ======================================
-# FIGURE 10 — Prada2013 Peak DT heatmap 
+# FIGURE 10 — Prada2013 Peak DT heatmap
 # ======================================
 print("\nGenerating Figure 10 — Prada2013 Peak DT heatmap...")
 fig10, axprada_1 = plt.subplots(figsize=(11, 7))
 sns.heatmap(prada_rise, ax=axprada_1, fmt=".1f", cmap="YlOrRd",
             vmin=0, vmax=np.nanmax(prada_rise), **HEATMAP_KW)
 axprada_1.set_title(
-    "Peak Temperature Rise DT (K)\n"
-    "Prada2013 Parameterization — LFP (A123 ANR26650)",
+    "Peak Temperature Rise (ΔT, K)\n"
+    "Prada2013, SPMe",
     fontweight="bold", pad=12)
 axprada_1.set_xlabel("Discharge C-Rate")
 axprada_1.set_ylabel("Ambient Temperature (K)")
@@ -695,7 +700,7 @@ fig11, axprada_2 = plt.subplots(figsize=(11, 7))
 sns.heatmap(prada_dur, ax=axprada_2, fmt=".0f", cmap="viridis_r", **HEATMAP_KW)
 axprada_2.set_title(
     "Discharge Duration to Voltage Cutoff (s)\n"
-    "Prada2013 — LFP (A123 ANR26650)",
+    "Prada2013, SPMe",
     fontweight="bold", pad=12)
 axprada_2.set_xlabel("Discharge C-Rate")
 axprada_2.set_ylabel("Ambient Temperature (K)")
@@ -724,8 +729,8 @@ axprada_3.axhline(y=cutoff_prada, color="gray", linestyle="--",
             linewidth=1.5, alpha=0.8,
             label=f"Voltage cutoff = {cutoff_prada:.2f} V")
 axprada_3.set_title(
-    "Voltage-Time Profiles at 298 K — Prada2013 (LFP)\n"
-    "Transport-Limited Cutoff Comparison",
+    "Terminal Voltage vs. Time at 298 K\n"
+    "Prada2013, SPMe",
     fontweight="bold", pad=12)
 axprada_3.set_xlabel("Time (s)")
 axprada_3.set_ylabel("Terminal Voltage (V)")
@@ -881,7 +886,7 @@ for ax, c_rate, title in zip(axes13, prada_conc_rates,
                 fontsize=8.5, color=col, fontweight='bold')
 
     t_this = sims_prada[c_rate]["Time [s]"].entries[-1]
-    ax.set_title(f'{title} — 298 K  (t_end = {t_this:.0f} s)',
+    ax.set_title(f'{title} (t_end = {t_this:.0f} s)',
                  fontsize=11, fontweight='bold')
     ax.set_xlim(0, Lp_total)
     ax.set_ylim(-50, c0_prada * 1.18)
@@ -893,8 +898,8 @@ for ax, c_rate, title in zip(axes13, prada_conc_rates,
     ax.tick_params(labelsize=10)
 
 plt.suptitle(
-    'Li\u207a Electrolyte Concentration vs. Position — SPMe, Prada2013 (LFP), 298 K\n'
-    f'{prada_conc_rates[0]}C vs. {prada_conc_rates[1]:.2f}C — each shown to its own cutoff time',
+    'Electrolyte Concentration vs. Position at 298 K\n'
+    'Prada2013, SPMe',
     fontsize=11, fontweight='bold', y=1.02)
 plt.tight_layout()
 plt.savefig('figure13_prada_conc.png', dpi=150, bbox_inches='tight', facecolor='white')
@@ -909,11 +914,11 @@ print("\nGenerating Figure 14 — Prada2013 extended high-C-rate sweep...")
 fig14, (ax14a, ax14b) = plt.subplots(1, 2, figsize=(14, 6))
 
 ax14a.plot(C_RATES_PRADA_EXT, prada_ext_dT, color="tab:red", marker="o",
-           markersize=5, linewidth=2.2, label="Prada2013 (LFP)")
+           markersize=5, linewidth=2.2, label="Prada2013")
 ax14a.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5, label="2.5C (main-grid ceiling)")
 ax14a.set_xlabel("Discharge C-Rate", fontsize=11)
 ax14a.set_ylabel("Peak ΔT (K)", fontsize=11)
-ax14a.set_title("(a) Peak ΔT vs. C-Rate\nPrada2013 Extended Range", fontweight="bold")
+ax14a.set_title("(a) Peak ΔT vs. C-Rate", fontweight="bold")
 ax14a.legend(fontsize=9)
 ax14a.grid(True, alpha=0.3)
 
@@ -924,13 +929,13 @@ ax14b.plot(C_RATES_PRADA_EXT, prada_ext_theo, color="black", linestyle=":",
 ax14b.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5)
 ax14b.set_xlabel("Discharge C-Rate", fontsize=11)
 ax14b.set_ylabel("Discharge Duration (s)", fontsize=11)
-ax14b.set_title("(b) Discharge Duration vs. C-Rate\nPrada2013 Extended Range", fontweight="bold")
+ax14b.set_title("(b) Discharge Duration vs. C-Rate", fontweight="bold")
 ax14b.legend(fontsize=9)
 ax14b.grid(True, alpha=0.3)
 
 fig14.suptitle(
-    "Prada2013 (LFP, A123 ANR26650) Extended High-C-Rate Sweep — 298 K\n"
-    "Testing whether a thermal cliff eventually appears beyond 2.5C",
+    "Extended High C-Rate Sweep\n"
+    "Prada2013, SPMe",
     fontsize=11, fontweight="bold"
 )
 plt.tight_layout()
