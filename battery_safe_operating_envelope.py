@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # If running in Jupyter/Colab and pybamm is not yet installed, uncomment:
 #!pip install pybamm -q
 
