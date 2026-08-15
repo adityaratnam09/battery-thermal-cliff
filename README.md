@@ -20,7 +20,7 @@ The study further demonstrates that this behaviour depends strongly on both batt
 
 A detailed paper describing the framework is available on Zenodo:
 
-**https://doi.org/10.5281/zenodo.XXXXXXX**
+**https://doi.org/10.5281/zenodo.21756397**
 
 <p align="center">
   <img src="images/figure1_chen_delta_T.png" alt="Transport-limited thermal cliff predicted for the Chen2020 parameter set" width="900">
