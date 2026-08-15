@@ -1,6 +1,6 @@
 # battery-thermal-cliff
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21756397.svg)](https://doi.org/10.5281/zenodo.21756397)
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![License](https://img.shields.io/badge/License-GPLv3-blue.svg)
 
