@@ -306,13 +306,13 @@ plt.show()
 print("\nGenerating Figure 3 — Chen2020 Voltage-Time Profiles...")
 chen_curves = get_voltage_curves("Chen2020", T_amb=298)
 fig3, ax3 = plt.subplots(figsize=(9, 6))
-styles = {
+styles_chen = {
     2.00: ("tab:blue",  "-",  "2.0C: near-complete discharge"),
     2.25: ("tab:green", "--", "2.25C: late-stage cutoff"),
-    2.50: ("tab:red",   ":",  "2.5C: shortened discharge"),
+    2.50: ("tab:red",   ":",  "2.5C: early transport-limited cutoff"),
 }
 cutoff_chen = None
-for C_rate, (color, ls, label) in styles.items():
+for C_rate, (color, ls, label) in styles_chen.items():
     t_arr, v_arr, cutoff = chen_curves[C_rate]
     cutoff_chen = cutoff
     ax3.plot(t_arr, v_arr, color=color, linestyle=ls,
@@ -474,8 +474,13 @@ plt.show()
 print("\nGenerating Figure 7 — Ecker2015 Voltage-Time Profiles...")
 ecker_curves = get_voltage_curves("Ecker2015", T_amb=298)
 fig7, ax6 = plt.subplots(figsize=(9, 6))
+styles_ecker = {
+    2.00: ("tab:blue",  "-",  "2.0C: near-complete discharge"),
+    2.25: ("tab:green", "--", "2.25C: late-stage cutoff"),
+    2.50: ("tab:red",   ":",  "2.5C: shortened discharge"),
+}
 cutoff_ecker = None
-for C_rate, (color, ls, label) in styles.items():
+for C_rate, (color, ls, label) in styles_ecker.items():
     t_arr, v_arr, cutoff = ecker_curves[C_rate]
     cutoff_ecker = cutoff
     ax6.plot(t_arr, v_arr, color=color, linestyle=ls,
@@ -718,8 +723,13 @@ plt.show()
 print("\nGenerating Figure 12 — Prada2013 Voltage-Time Profiles...")
 prada_curves = get_voltage_curves("Prada2013", T_amb=298)
 fig12, axprada_3 = plt.subplots(figsize=(9, 6))
+styles_prada = {
+    2.00: ("tab:blue",  "-",  "2.0C: near-complete discharge"),
+    2.25: ("tab:green", "--", "2.25C: late-stage cutoff"),
+    2.50: ("tab:red",   ":",  "2.5C: shortened discharge"),
+}
 cutoff_prada = None
-for C_rate, (color, ls, label) in styles.items():
+for C_rate, (color, ls, label) in styles_prada.items():
     t_arr, v_arr, cutoff = prada_curves[C_rate]
     cutoff_prada = cutoff
     axprada_3.plot(t_arr, v_arr, color=color, linestyle=ls,
