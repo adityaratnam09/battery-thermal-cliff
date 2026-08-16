@@ -309,7 +309,7 @@ fig3, ax3 = plt.subplots(figsize=(9, 6))
 styles = {
     2.00: ("tab:blue",  "-",  "2.0C: near-complete discharge"),
     2.25: ("tab:green", "--", "2.25C: late-stage cutoff"),
-    2.50: ("tab:red",   ":",  "2.5C: early transport-limited cutoff"),
+    2.50: ("tab:red",   ":",  "2.5C: shortened discharge"),
 }
 cutoff_chen = None
 for C_rate, (color, ls, label) in styles.items():
