@@ -108,6 +108,11 @@ def load_parameter_values(param_name):
             "Negative electrode specific heat capacity [J.kg-1.K-1]",
             "Positive electrode specific heat capacity [J.kg-1.K-1]",
             "Separator specific heat capacity [J.kg-1.K-1]",
+
+            # --- Thermal conductivities (needed for the Biot number check) ---
+            "Negative electrode thermal conductivity [W.m-1.K-1]",
+            "Positive electrode thermal conductivity [W.m-1.K-1]",
+            "Separator thermal conductivity [W.m-1.K-1]",
         ]
 
         provenance = {}
@@ -406,6 +411,22 @@ for ax, c_rate, title in zip(axes, [2.25, 2.5], ['2.25C', '2.5C']):
     ]:
         ax.text(xm, c0*1.08, lbl, ha='center', va='bottom',
                 fontsize=8.5, color=col, fontweight='bold')
+
+    # --- Annotate the concentration minimum (value + position) on the
+    #     final snapshot, so the depletion numbers already quoted in the
+    #     text are also readable directly off the figure. ---
+    final_profile = np.clip(ce_all[:, np.argmin(np.abs(t_all - snap_times_this[-1]))], 0, None)
+    min_idx = int(np.argmin(final_profile))
+    min_val = float(final_profile[min_idx])
+    min_x   = float(x_µm[min_idx])
+    ax.annotate(
+        f"min = {min_val:.1f} mol m⁻³\n@ x = {min_x:.0f} µm",
+        xy=(min_x, min_val),
+        xytext=(min_x - L_total * 0.32, c0 * 0.55),
+        fontsize=8.5, color="#333333",
+        arrowprops=dict(arrowstyle="->", color="#333333", lw=1.0),
+        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#999999", alpha=0.9),
+    )
 
     t_this = sims[c_rate]["Time [s]"].entries[-1]
     ax.set_title(f'{title} (t_end = {t_this:.0f} s)',
@@ -953,4 +974,549 @@ plt.show()
 plt.close()
 print("\nSaved: figure14_prada_extended_sweep.png")
 
-print("\nAll figures saved successfully.")
+print("\nAll main-text figures saved successfully.")
+
+# ============================================================================
+# EXTENSION HELPERS
+# ============================================================================
+# The sections below add supplementary robustness checks raised in review:
+#   Fig 15 - cutoff voltage & initial electrolyte concentration sensitivity
+#   Fig 16 - additional transport-parameter sensitivity (diffusivity,
+#            conductivity, transference number, separator tortuosity)
+#   Fig 17 - Bruggeman coefficient sensitivity widened to +/-10/20/30%
+#   Fig 18 - heat source decomposition (ohmic / reaction / reversible),
+#            SPMe vs DFN, at 2.25C and 2.5C
+#   Fig 19 - capacity-normalized peak heat generation, Chen2020 vs Ecker2015
+#   Fig 20 - OCP-swap counterfactual (Chen2020 cell with Prada2013's
+#            positive-electrode OCP) to separate chemistry-shape effects
+#            from transport effects
+#   + a DFN mesh-refinement convergence check (printed, Section "DFN
+#     CONVERGENCE CHECK") and a Biot number estimate (printed, Section
+#     "BIOT NUMBER ESTIMATE") for all three parameter sets.
+# None of this touches the main-grid sweeps or Figures 1-14 above; every
+# section below runs its own small, targeted simulations at 298 K only,
+# using the existing load_parameter_values() / C_RATES_SENS machinery.
+# ============================================================================
+
+def run_point(param_name, C_rate, T_amb=298, overrides=None, model_cls=None,
+              var_pts=None, solver_mode="fast"):
+    """
+    Shared single-point runner used by all extension sections below.
+    Mirrors run_sensitivity_point()'s logic (Figure 8) but accepts an
+    arbitrary dict of parameter overrides and an optional model/solver
+    swap, so it can be reused for transport-parameter sweeps, cutoff/
+    initial-concentration sweeps, OCP swaps, and DFN mesh refinement
+    without duplicating the solve/DeltaT/duration bookkeeping each time.
+    Returns (delta_T, duration, solution_or_None).
+    """
+    model_cls = model_cls or pybamm.lithium_ion.SPMe
+    model  = model_cls(options={"thermal": "lumped"})
+    param  = load_parameter_values(param_name)
+    solver = pybamm.CasadiSolver(mode=solver_mode, atol=1e-9, rtol=1e-7)
+
+    nom_cap  = param["Nominal cell capacity [A.h]"]
+    if overrides:
+        param.update(overrides)
+    cutoff_v = param["Lower voltage cut-off [V]"]
+
+    param.update({
+        "Ambient temperature [K]": T_amb,
+        "Initial temperature [K]": T_amb,
+        "Current function [A]": C_rate * nom_cap,
+    })
+
+    discharge_time = (1.0 / C_rate) * 3600.0 * 1.1
+    t_eval = np.linspace(0, discharge_time, 100)
+
+    try:
+        sim_kwargs = dict(parameter_values=param, solver=solver)
+        if var_pts is not None:
+            sim_kwargs["var_pts"] = var_pts
+        sim = pybamm.Simulation(model, **sim_kwargs)
+        sol = sim.solve(t_eval=t_eval)
+        voltage   = sol["Voltage [V]"].entries
+        cell_temp = sol["Volume-averaged cell temperature [K]"].entries
+        valid     = voltage >= cutoff_v
+        delta_T   = float(np.max(cell_temp[valid]) if valid.any() else np.max(cell_temp)) - T_amb
+        duration  = sol.t[-1]
+        return delta_T, duration, sol
+    except Exception as e:
+        print(f"    FAILED ({param_name}, {C_rate}C): {type(e).__name__}: {e}")
+        return np.nan, np.nan, None
+
+
+def scale_function_parameter(original_func, scale_factor):
+    """Wrap a callable PyBaMM parameter (e.g. electrolyte diffusivity/
+    conductivity, both functions of (c_e, T)) so its output is scaled by
+    a constant factor, regardless of the wrapped function's own signature."""
+    def scaled(*args, **kwargs):
+        return scale_factor * original_func(*args, **kwargs)
+    return scaled
+
+
+# ============================================================================
+# FIGURE 15 - Cutoff Voltage & Initial Electrolyte Concentration Sensitivity
+#             (Chen2020, 298 K)
+# ============================================================================
+print("\nGenerating Figure 15: cutoff voltage & initial electrolyte "
+      "concentration sensitivity...")
+
+BASE_CUTOFF = pybamm.ParameterValues("Chen2020")["Lower voltage cut-off [V]"]
+BASE_C0     = pybamm.ParameterValues("Chen2020")["Initial concentration in electrolyte [mol.m-3]"]
+
+cutoff_cases = {
+    "Baseline (2.50 V)": BASE_CUTOFF,
+    "-0.10 V (2.40 V)":  BASE_CUTOFF - 0.10,
+    "+0.10 V (2.60 V)":  BASE_CUTOFF + 0.10,
+}
+c0_cases = {
+    "Baseline (1000 mol m⁻³)": BASE_C0,
+    "-10% (900 mol m⁻³)":      BASE_C0 * 0.90,
+    "+10% (1100 mol m⁻³)":     BASE_C0 * 1.10,
+}
+sweep_colors = {0: "tab:blue", 1: "tab:green", 2: "tab:red"}
+sweep_styles = {0: "-", 1: "--", 2: ":"}
+
+fig15, (ax15a, ax15b) = plt.subplots(1, 2, figsize=(14, 6))
+
+print("  -- cutoff voltage sweep --")
+for i, (label, v_cut) in enumerate(cutoff_cases.items()):
+    dTs = []
+    for C in C_RATES_SENS:
+        dT, dur, _ = run_point("Chen2020", C, overrides={"Lower voltage cut-off [V]": v_cut})
+        dTs.append(dT)
+        print(f"    {label} @ {C}C: dT={dT:.1f}K" if not np.isnan(dT) else f"    {label} @ {C}C: FAILED")
+    ax15a.plot(C_RATES_SENS, dTs, color=sweep_colors[i], linestyle=sweep_styles[i],
+               marker="o", markersize=5, linewidth=2.5, label=label)
+
+print("  -- initial electrolyte concentration sweep --")
+for i, (label, c0_val) in enumerate(c0_cases.items()):
+    dTs = []
+    for C in C_RATES_SENS:
+        dT, dur, _ = run_point("Chen2020", C,
+                                overrides={"Initial concentration in electrolyte [mol.m-3]": c0_val})
+        dTs.append(dT)
+        print(f"    {label} @ {C}C: dT={dT:.1f}K" if not np.isnan(dT) else f"    {label} @ {C}C: FAILED")
+    ax15b.plot(C_RATES_SENS, dTs, color=sweep_colors[i], linestyle=sweep_styles[i],
+               marker="o", markersize=5, linewidth=2.5, label=label)
+
+for ax, title in [(ax15a, "(a) Cutoff Voltage Sensitivity"),
+                   (ax15b, "(b) Initial Electrolyte Concentration Sensitivity")]:
+    ax.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5)
+    ax.set_xlabel("Discharge C-Rate", fontsize=11)
+    ax.set_ylabel("Peak ΔT (K)", fontsize=11)
+    ax.set_title(title, fontweight="bold")
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+fig15.suptitle(
+    "Cutoff Voltage and Initial Electrolyte Concentration Sensitivity\n"
+    "Chen2020, SPMe, 298 K",
+    fontsize=11, fontweight="bold"
+)
+plt.tight_layout()
+plt.savefig("figure15_cutoff_c0_sensitivity.png", dpi=300, bbox_inches="tight")
+plt.show()
+plt.close()
+print("Saved: figure15_cutoff_c0_sensitivity.png")
+
+# ============================================================================
+# FIGURE 16 - Additional Transport-Parameter Sensitivity (+/-10%)
+#             (Chen2020, 298 K)
+# ============================================================================
+print("\nGenerating Figure 16: additional transport-parameter sensitivity...")
+
+p_base = pybamm.ParameterValues("Chen2020")
+base_diffusivity   = p_base["Electrolyte diffusivity [m2.s-1]"]
+base_conductivity  = p_base["Electrolyte conductivity [S.m-1]"]
+base_transference  = p_base["Cation transference number"]
+base_sep_bruggeman = p_base["Separator Bruggeman coefficient (electrolyte)"]
+
+transport_params = {
+    "Electrolyte diffusivity": {
+        "key": "Electrolyte diffusivity [m2.s-1]",
+        "baseline": base_diffusivity,
+        "make_override": lambda f: scale_function_parameter(f, 1.0),
+        "is_function": True,
+        "base_value": base_diffusivity,
+    },
+    "Electrolyte conductivity": {
+        "key": "Electrolyte conductivity [S.m-1]",
+        "base_value": base_conductivity,
+        "is_function": True,
+    },
+    "Cation transference number": {
+        "key": "Cation transference number",
+        "base_value": base_transference,
+        "is_function": False,
+    },
+    "Separator Bruggeman coefficient": {
+        "key": "Separator Bruggeman coefficient (electrolyte)",
+        "base_value": base_sep_bruggeman,
+        "is_function": False,
+    },
+}
+
+fig16, axes16 = plt.subplots(2, 2, figsize=(14, 11))
+axes16 = axes16.flatten()
+
+for panel_idx, (pname, info) in enumerate(transport_params.items()):
+    ax = axes16[panel_idx]
+    key = info["key"]
+    print(f"  -- {pname} +/-10% --")
+    for i, pct in enumerate([-0.10, 0.0, 0.10]):
+        label = ("Baseline" if pct == 0.0 else f"{pct:+.0%}")
+        if info["is_function"]:
+            base_func = info["base_value"]
+            override_val = scale_function_parameter(base_func, 1.0 + pct)
+        else:
+            override_val = info["base_value"] * (1.0 + pct)
+        dTs = []
+        for C in C_RATES_SENS:
+            dT, dur, _ = run_point("Chen2020", C, overrides={key: override_val})
+            dTs.append(dT)
+        print(f"    {label}: dT range {np.nanmin(dTs):.1f}-{np.nanmax(dTs):.1f} K")
+        ax.plot(C_RATES_SENS, dTs, color=sweep_colors[i], linestyle=sweep_styles[i],
+                marker="o", markersize=4, linewidth=2.2, label=label)
+    ax.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5)
+    ax.set_xlabel("Discharge C-Rate", fontsize=10)
+    ax.set_ylabel("Peak ΔT (K)", fontsize=10)
+    ax.set_title(f"({chr(97+panel_idx)}) {pname} ±10%", fontweight="bold", fontsize=10.5)
+    ax.legend(fontsize=8.5)
+    ax.grid(True, alpha=0.3)
+
+fig16.suptitle(
+    "Additional Transport-Parameter Sensitivity (±10%)\n"
+    "Chen2020, SPMe, 298 K",
+    fontsize=12, fontweight="bold"
+)
+plt.tight_layout()
+plt.savefig("figure16_transport_param_sensitivity.png", dpi=300, bbox_inches="tight")
+plt.show()
+plt.close()
+print("Saved: figure16_transport_param_sensitivity.png")
+
+# ============================================================================
+# FIGURE 17 - Bruggeman Coefficient Sensitivity Widened to +/-10/20/30%
+#             (Chen2020, 298 K)
+# ============================================================================
+print("\nGenerating Figure 17: widened Bruggeman coefficient sensitivity...")
+
+bruggeman_wide_cases = {
+    "Baseline (β = 1.50)": 0.00,
+    "-10% (β = 1.35)":     -0.10,
+    "+10% (β = 1.65)":      0.10,
+    "-20% (β = 1.20)":     -0.20,
+    "+20% (β = 1.80)":      0.20,
+    "-30% (β = 1.05)":     -0.30,
+    "+30% (β = 1.95)":      0.30,
+}
+wide_colors = plt.cm.coolwarm(np.linspace(0, 1, len(bruggeman_wide_cases)))
+
+fig17, (ax17a, ax17b) = plt.subplots(1, 2, figsize=(14, 6))
+for i, (label, pct) in enumerate(bruggeman_wide_cases.items()):
+    b_val = BRUGGEMAN_BASE * (1.0 + pct)
+    dTs, durs = [], []
+    print(f"  -- {label} --")
+    for C in C_RATES_SENS:
+        dT, dur, _ = run_point("Chen2020", C,
+                                overrides={"Positive electrode Bruggeman coefficient (electrolyte)": b_val})
+        dTs.append(dT)
+        durs.append(dur)
+    ax17a.plot(C_RATES_SENS, dTs, color=wide_colors[i],
+               linestyle="-" if pct == 0 else "--", linewidth=2.2 if pct == 0 else 1.6,
+               marker="o", markersize=4, label=label)
+    ax17b.plot(C_RATES_SENS, durs, color=wide_colors[i],
+               linestyle="-" if pct == 0 else "--", linewidth=2.2 if pct == 0 else 1.6,
+               marker="o", markersize=4, label=label)
+
+for ax, ylabel, title in [(ax17a, "Peak ΔT (K)", "(a) Peak ΔT vs. C-Rate"),
+                           (ax17b, "Discharge Duration (s)", "(b) Discharge Duration vs. C-Rate")]:
+    ax.axvline(x=2.5, color="gray", linestyle=":", alpha=0.5, label="2.5C")
+    ax.set_xlabel("Discharge C-Rate", fontsize=11)
+    ax.set_ylabel(ylabel, fontsize=11)
+    ax.set_title(title, fontweight="bold")
+    ax.legend(fontsize=7.5, ncol=1)
+    ax.grid(True, alpha=0.3)
+
+fig17.suptitle(
+    "Bruggeman Coefficient Sensitivity, Widened Range (±10/20/30%)\n"
+    "Chen2020, SPMe, 298 K",
+    fontsize=11, fontweight="bold"
+)
+plt.tight_layout()
+plt.savefig("figure17_bruggeman_wide_sensitivity.png", dpi=300, bbox_inches="tight")
+plt.show()
+plt.close()
+print("Saved: figure17_bruggeman_wide_sensitivity.png")
+
+# ============================================================================
+# FIGURE 18 - Heat Source Decomposition (Ohmic / Reaction / Reversible),
+#             SPMe vs DFN, at 2.25C and 2.5C (Chen2020, 298 K)
+# ============================================================================
+print("\nGenerating Figure 18: heat source decomposition, SPMe vs DFN...")
+
+HEAT_VARS = {
+    "Ohmic":      "Ohmic heating [W]",
+    "Reaction":   "Irreversible electrochemical heating [W]",
+    "Reversible": "Reversible heating [W]",
+    "Total":      "Total heating [W]",
+}
+
+def get_heat_decomposition(model_cls, C_rate, T_amb=298):
+    model  = model_cls(options={"thermal": "lumped"})
+    param  = load_parameter_values("Chen2020")
+    solver = pybamm.CasadiSolver(mode="safe", atol=1e-9, rtol=1e-7)
+    nom_cap = param["Nominal cell capacity [A.h]"]
+    param.update({
+        "Ambient temperature [K]": T_amb,
+        "Initial temperature [K]": T_amb,
+        "Current function [A]": C_rate * nom_cap,
+    })
+    t_eval = np.linspace(0, (1.0 / C_rate) * 3600.0 * 1.1, 200)
+    try:
+        sim = pybamm.Simulation(model, parameter_values=param, solver=solver)
+        sol = sim.solve(t_eval=t_eval)
+        t = sol["Time [s]"].entries
+        out = {"t": t}
+        for label, var in HEAT_VARS.items():
+            out[label] = sol[var].entries
+        return out
+    except Exception as e:
+        print(f"    FAILED ({model_cls.__name__}, {C_rate}C): {type(e).__name__}: {e}")
+        return None
+
+fig18, axes18 = plt.subplots(2, 2, figsize=(14, 10), sharex="col")
+model_pairs = [("SPMe", pybamm.lithium_ion.SPMe), ("DFN", pybamm.lithium_ion.DFN)]
+c_rates_18 = [2.25, 2.5]
+heat_colors = {"Ohmic": "tab:orange", "Reaction": "tab:purple",
+               "Reversible": "tab:green", "Total": "black"}
+
+for col, C_rate in enumerate(c_rates_18):
+    for row, (model_name, model_cls) in enumerate(model_pairs):
+        ax = axes18[row, col]
+        print(f"  -- {model_name}, {C_rate}C --")
+        data = get_heat_decomposition(model_cls, C_rate)
+        if data is not None:
+            for label in ["Ohmic", "Reaction", "Reversible"]:
+                ax.plot(data["t"], data[label], color=heat_colors[label],
+                        linewidth=2.0, label=label)
+            ax.plot(data["t"], data["Total"], color=heat_colors["Total"],
+                    linewidth=1.4, linestyle="--", label="Total (check)")
+        ax.set_title(f"{model_name}, {C_rate}C", fontweight="bold", fontsize=10.5)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+        if row == 1:
+            ax.set_xlabel("Time (s)", fontsize=10)
+        if col == 0:
+            ax.set_ylabel("Heat generation rate (W)", fontsize=10)
+
+fig18.suptitle(
+    "Heat Source Decomposition vs. Time (Ohmic, Reaction, Reversible)\n"
+    "Chen2020, SPMe vs. DFN, 298 K",
+    fontsize=12, fontweight="bold"
+)
+plt.tight_layout()
+plt.savefig("figure18_heat_decomposition.png", dpi=300, bbox_inches="tight")
+plt.show()
+plt.close()
+print("Saved: figure18_heat_decomposition.png")
+
+# ============================================================================
+# FIGURE 19 - Capacity-Normalized Peak Heat Generation: Chen2020 vs Ecker2015
+#             (298 K)
+# ============================================================================
+print("\nGenerating Figure 19: capacity-normalized peak heat, Chen2020 vs "
+      "Ecker2015...")
+
+def get_peak_total_heat(param_name, C_rate, T_amb=298):
+    model  = pybamm.lithium_ion.SPMe(options={"thermal": "lumped"})
+    param  = load_parameter_values(param_name)
+    solver = pybamm.CasadiSolver(mode="fast", atol=1e-9, rtol=1e-7)
+    nom_cap = param["Nominal cell capacity [A.h]"]
+    param.update({
+        "Ambient temperature [K]": T_amb,
+        "Initial temperature [K]": T_amb,
+        "Current function [A]": C_rate * nom_cap,
+    })
+    t_eval = np.linspace(0, (1.0 / C_rate) * 3600.0 * 1.1, 150)
+    try:
+        sim = pybamm.Simulation(model, parameter_values=param, solver=solver)
+        sol = sim.solve(t_eval=t_eval)
+        peak_heat_W = float(np.max(sol["Total heating [W]"].entries))
+        return peak_heat_W, nom_cap
+    except Exception as e:
+        print(f"    FAILED ({param_name}, {C_rate}C): {type(e).__name__}: {e}")
+        return np.nan, np.nan
+
+norm_results = {"Chen2020": {"raw": [], "norm": []}, "Ecker2015": {"raw": [], "norm": []}}
+for pname in ["Chen2020", "Ecker2015"]:
+    print(f"  -- {pname} --")
+    for C in C_RATES_SENS:
+        peak_W, cap_Ah = get_peak_total_heat(pname, C)
+        norm_results[pname]["raw"].append(peak_W)
+        norm_results[pname]["norm"].append(peak_W / cap_Ah if cap_Ah and not np.isnan(cap_Ah) else np.nan)
+        print(f"    {C}C: peak={peak_W:.3f} W, capacity={cap_Ah:.3f} Ah, "
+              f"normalized={peak_W/cap_Ah if cap_Ah else float('nan'):.3f} W/Ah")
+
+fig19, (ax19a, ax19b) = plt.subplots(1, 2, figsize=(14, 6))
+for pname, color in [("Chen2020", "tab:blue"), ("Ecker2015", "tab:orange")]:
+    ax19a.plot(C_RATES_SENS, norm_results[pname]["raw"], color=color,
+               marker="o", markersize=5, linewidth=2.2, label=pname)
+    ax19b.plot(C_RATES_SENS, norm_results[pname]["norm"], color=color,
+               marker="o", markersize=5, linewidth=2.2, label=pname)
+
+ax19a.set_title("(a) Peak Total Heat Generation (Raw)", fontweight="bold")
+ax19a.set_ylabel("Peak heat generation rate (W)", fontsize=11)
+ax19b.set_title("(b) Peak Heat Generation, Normalized by Capacity", fontweight="bold")
+ax19b.set_ylabel("Peak heat generation rate per unit capacity (W A⁻¹h⁻¹)", fontsize=11)
+for ax in (ax19a, ax19b):
+    ax.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5)
+    ax.set_xlabel("Discharge C-Rate", fontsize=11)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+fig19.suptitle(
+    "Capacity-Normalized Peak Heat Generation, Chen2020 vs. Ecker2015\n"
+    "SPMe, 298 K",
+    fontsize=11, fontweight="bold"
+)
+plt.tight_layout()
+plt.savefig("figure19_capacity_normalized_heat.png", dpi=300, bbox_inches="tight")
+plt.show()
+plt.close()
+print("Saved: figure19_capacity_normalized_heat.png")
+
+# ============================================================================
+# FIGURE 20 - OCP-Swap Counterfactual: Chen2020 Cell with Prada2013's
+#             Positive-Electrode OCP (298 K, 2.5C)
+# ============================================================================
+print("\nGenerating Figure 20: OCP-swap counterfactual (Chen2020 vs "
+      "Chen2020-with-Prada2013-OCP vs Prada2013)...")
+print("  NOTE: this swaps only 'Positive electrode OCP [V]'; Chen2020's own "
+      "stoichiometry window (x_0/x_100) is NOT recalibrated to LFP's, so "
+      "this isolates OCP *shape* only qualitatively, not a fully rebalanced "
+      "LFP cell. See paper Limitations for this caveat.")
+
+ocp_swap_C_rate = 2.5
+
+prada_ocp = pybamm.ParameterValues("Prada2013")["Positive electrode OCP [V]"]
+
+dT_chen, dur_chen, sol_chen = run_point("Chen2020", ocp_swap_C_rate, solver_mode="safe")
+dT_swap, dur_swap, sol_swap = run_point(
+    "Chen2020", ocp_swap_C_rate, solver_mode="safe",
+    overrides={"Positive electrode OCP [V]": prada_ocp}
+)
+dT_prada, dur_prada, sol_prada = run_point("Prada2013", ocp_swap_C_rate, solver_mode="safe")
+
+print(f"  Chen2020 (native OCP):            dT={dT_chen:.1f} K, t={dur_chen:.0f} s")
+print(f"  Chen2020 (Prada2013 OCP swapped): dT={dT_swap:.1f} K, t={dur_swap:.0f} s")
+print(f"  Prada2013 (native, own transport): dT={dT_prada:.1f} K, t={dur_prada:.0f} s")
+
+fig20, ax20 = plt.subplots(figsize=(9, 6.5))
+for sol, label, color, ls in [
+    (sol_chen,  f"Chen2020 native (ΔT={dT_chen:.1f}K, t={dur_chen:.0f}s)",           "tab:red",   "-"),
+    (sol_swap,  f"Chen2020 + Prada2013 OCP (ΔT={dT_swap:.1f}K, t={dur_swap:.0f}s)",  "tab:purple","--"),
+    (sol_prada, f"Prada2013 native (ΔT={dT_prada:.1f}K, t={dur_prada:.0f}s)",        "tab:green", ":"),
+]:
+    if sol is not None:
+        ax20.plot(sol["Time [s]"].entries, sol["Voltage [V]"].entries,
+                  color=color, linestyle=ls, linewidth=2.5, label=label)
+
+ax20.set_xlabel("Time (s)", fontsize=11)
+ax20.set_ylabel("Terminal Voltage (V)", fontsize=11)
+ax20.set_title(
+    f"OCP-Swap Counterfactual at {ocp_swap_C_rate}C, 298 K\n"
+    "Isolating OCP Shape from Transport Parameters",
+    fontweight="bold"
+)
+ax20.legend(fontsize=8.5, loc="upper right")
+ax20.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig("figure20_ocp_swap_counterfactual.png", dpi=300, bbox_inches="tight")
+plt.show()
+plt.close()
+print("Saved: figure20_ocp_swap_counterfactual.png")
+
+# ============================================================================
+# DFN CONVERGENCE CHECK (printed) - default vs. refined mesh, Chen2020,
+# 2.0C and 2.5C, 298 K
+# ============================================================================
+print("\n" + "=" * 70)
+print("DFN CONVERGENCE CHECK (Chen2020, 298 K)")
+print("=" * 70)
+
+default_var_pts = pybamm.lithium_ion.DFN().default_var_pts
+default_report = {k: default_var_pts[k] for k in ["x_n", "x_s", "x_p", "r_n", "r_p"]}
+refined_var_pts = dict(default_var_pts)
+refined_var_pts.update({"x_n": 40, "x_s": 40, "x_p": 40, "r_n": 40, "r_p": 40})
+refined_report = {k: refined_var_pts[k] for k in ["x_n", "x_s", "x_p", "r_n", "r_p"]}
+
+print(f"Default DFN discretization (through-thickness x_n/x_s/x_p, "
+      f"particle r_n/r_p): {default_report}")
+print(f"Refined DFN discretization for this check: {refined_report}")
+
+for C_rate in [2.0, 2.5]:
+    print(f"\n  -- {C_rate}C --")
+    dT_def, dur_def, _ = run_point("Chen2020", C_rate, model_cls=pybamm.lithium_ion.DFN,
+                                    solver_mode="safe")
+    print(f"    Default mesh:  dT={dT_def:.2f} K, t={dur_def:.0f} s"
+          if not np.isnan(dT_def) else "    Default mesh:  FAILED")
+    dT_ref, dur_ref, _ = run_point("Chen2020", C_rate, model_cls=pybamm.lithium_ion.DFN,
+                                    var_pts=refined_var_pts, solver_mode="safe")
+    print(f"    Refined mesh:  dT={dT_ref:.2f} K, t={dur_ref:.0f} s"
+          if not np.isnan(dT_ref) else "    Refined mesh:  FAILED (see note below)")
+    if not np.isnan(dT_def) and not np.isnan(dT_ref):
+        print(f"    Difference:    ΔT changed by {abs(dT_ref - dT_def):.2f} K "
+              f"({100*abs(dT_ref-dT_def)/dT_def:.1f}%), "
+              f"duration changed by {abs(dur_ref - dur_def):.0f} s")
+    elif not np.isnan(dT_def) and np.isnan(dT_ref):
+        print("    Refined-mesh run did not converge at this rate; this is "
+              "itself informative and is reported as-is rather than silently "
+              "retried at looser tolerances.")
+
+# ============================================================================
+# BIOT NUMBER ESTIMATE (printed) - Chen2020, Ecker2015, Prada2013
+# ============================================================================
+print("\n" + "=" * 70)
+print("BIOT NUMBER ESTIMATE (all three parameter sets)")
+print("=" * 70)
+print("Bi = h * L_c / k, with L_c = V_cell / A_cooling (volume-to-area "
+      "characteristic length) and k = an effective/representative thermal "
+      "conductivity for the cell. Bi << 1 supports the lumped-thermal-mass "
+      "assumption used throughout this study; Bi approaching or exceeding "
+      "~0.1 signals that internal temperature gradients may not be "
+      "negligible, which is a limitation of every ΔT value reported here.")
+
+H_COEFF = 10.0  # W m^-2 K^-1, matches "Total heat transfer coefficient" used throughout
+
+for pname in ["Chen2020", "Ecker2015", "Prada2013"]:
+    p = load_parameter_values(pname)
+    V_cell = p["Cell volume [m3]"]
+    A_cell = p["Cell cooling surface area [m2]"]
+    L_c = V_cell / A_cell
+
+    # Representative effective thermal conductivity: volume-weighted average
+    # of the three layer thermal conductivities, weighted by layer thickness
+    # as a simple proxy for through-cell (radial, for a cylinder) conduction.
+    try:
+        k_n = p["Negative electrode thermal conductivity [W.m-1.K-1]"]
+        k_s = p["Separator thermal conductivity [W.m-1.K-1]"]
+        k_p = p["Positive electrode thermal conductivity [W.m-1.K-1]"]
+        L_n = p["Negative electrode thickness [m]"]
+        L_s = p["Separator thickness [m]"]
+        L_p = p["Positive electrode thickness [m]"]
+        k_eff = (k_n * L_n + k_s * L_s + k_p * L_p) / (L_n + L_s + L_p)
+    except KeyError as e:
+        print(f"  {pname}: missing thermal conductivity key ({e}); skipping k_eff.")
+        continue
+
+    Bi = H_COEFF * L_c / k_eff
+    print(f"\n  {pname}:")
+    print(f"    V_cell = {V_cell:.3e} m^3, A_cell = {A_cell:.3e} m^2, "
+          f"L_c = V/A = {L_c*1e3:.3f} mm")
+    print(f"    k_eff (thickness-weighted) = {k_eff:.2f} W/m/K")
+    print(f"    Bi = h*L_c/k_eff = {Bi:.4f}  "
+          f"({'lumped assumption reasonable' if Bi < 0.1 else 'lumped assumption questionable'})")
+
+print("\nAll figures (main text + extensions) saved successfully.")
