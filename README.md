@@ -131,7 +131,7 @@ pip install -r requirements.txt
 Run the full pipeline (headless, saves everything to `./figures`):
 
 ```bash
-python README.md.py
+python battery_safe_operating_envelope.py
 ```
 
 Other options:

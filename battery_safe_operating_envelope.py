@@ -11,11 +11,11 @@ Lithium-Ion Battery Simulations."
 
 Usage
 -----
-    python generate_figures.py                  # full run, headless, saves to ./figures
-    python generate_figures.py --show            # also pop up each figure as it renders
-    python generate_figures.py --quick           # coarse grids, for a fast smoke test
-    python generate_figures.py --skip-extensions  # main-text figures (1-14) only
-    python generate_figures.py --output-dir out  # choose where figures/logs are written
+    python battery_safe_operating_envelope.py                  # full run, headless, saves to ./figures
+    python battery_safe_operating_envelope.py --show            # also pop up each figure as it renders
+    python battery_safe_operating_envelope.py --quick           # coarse grids, for a fast smoke test
+    python battery_safe_operating_envelope.py --skip-extensions  # main-text figures (1-14) only
+    python battery_safe_operating_envelope.py --output-dir out  # choose where figures/logs are written
 
 See README.md for setup instructions and requirements.txt for dependencies.
 """
@@ -35,7 +35,6 @@ import matplotlib
 if "--show" not in sys.argv:
     matplotlib.use("Agg")
 
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import pybamm
@@ -330,7 +329,6 @@ def plot_concentration_profiles(sims, geometry, c0, filename, label, rate_titles
     spaced snapshots in time, for two C-rates side by side."""
     l_neg, l_sep, l_pos, l_total = geometry
     cmap = matplotlib.colormaps["plasma_r"].resampled(6)
-    #cmap = cm.get_cmap("plasma_r", 6)
     c_rates = list(sims.keys())
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
@@ -437,7 +435,7 @@ def generate_main_figures():
         sim = pybamm.Simulation(model, experiment=exp, parameter_values=p)
         sim.solve(solver=pybamm.CasadiSolver(mode="fast", atol=1e-9, rtol=1e-7))
         sims_chen[c_rate] = sim.solution
-    plot_concentration_profiles(sims_chen, geometry, c0, "figure4_chen_conc.png", "Chen2020",
+    plot_concentration_profiles(sims_chen, geometry, c0, "figure4_conc.png", "Chen2020",
                                  ["2.25C", "2.5C"], annotate_min=True)
 
     # Figures 5-7: Ecker2015
