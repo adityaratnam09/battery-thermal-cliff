@@ -73,8 +73,9 @@ battery-thermal-cliff/
 ├── battery_safe_operating_envelope.py
 ├── README.md
 ├── LICENSE
+├── requirements.txt
 │
-└── images/
+└──images/
     ├── figure1_chen_delta_T.png
     ├── figure2_chen_duration.png
     ├── figure3_chen_voltage_cutoff.png
@@ -88,7 +89,13 @@ battery-thermal-cliff/
     ├── figure11_prada_duration.png
     ├── figure12_prada_voltage_cutoff.png
     ├── figure13_prada_conc.png
-    └── figure14_prada_extended_sweep.png
+    ├── figure14_prada_extended_sweep.png
+    ├── figure15_cutoff_c0_sensitivity.png
+    ├── figure16_transport_param_sensitivity.png
+    ├── figure17_bruggeman_wide_sensitivity.png
+    ├── figure18_heat_decomposition.png
+    ├── figure19_capacity_normalized_heat.png
+    └── figure20_ocp_swap_counterfactual.png
 ```
 
 ---
@@ -107,24 +114,62 @@ seaborn
 scipy
 casadi
 ```
+---
 
-Install them using:
+## Setup
 
 ```bash
-pip install pybamm numpy matplotlib seaborn scipy
+python3 -m venv venv
+source venv/bin/activate   # on Windows: venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
 ---
 
-## Running the Code
+## Usage
 
-Execute
+Run the full pipeline (headless, saves everything to `./figures`):
 
 ```bash
-python battery_safe_operating_envelope.py
+python README.md.py
 ```
 
-The script reproduces all simulations, analyses, and figures presented in the accompanying paper.
+Other options:
+
+```bash
+python battery_safe_operating_envelope.py --show               # also display each figure as it renders
+python battery_safe_operating_envelope.py --quick               # coarse grids, for a fast end-to-end smoke test
+python battery_safe_operating_envelope.py --skip-extensions      # only figures 1-14 (skip 15-20 + diagnostics)
+python battery_safe_operating_envelope.py --output-dir results   # choose the output directory
+```
+
+A full run (`AMBIENT_TEMPS x C_RATES` grids for three parameter sets, plus
+all sensitivity sweeps) involves several hundred PyBaMM solves and can take
+some time; use `--quick` first to confirm your environment is set up
+correctly.
+
+---
+
+## Output
+
+- `figures/figure1_....png` ... `figures/figure20_....png` — all paper
+  figures, at 300 DPI.
+- `figures/run_log.txt` — full console log of the run, including the
+  DFN mesh-refinement convergence check and Biot number estimates
+  reported in the paper's Methods/Limitations discussion.
+
+---
+
+## Structure
+
+- `load_parameter_values()` — loads a PyBaMM parameter set, patching
+  Prada2013's missing thermal/geometric keys (see the paper's Methods
+  section for the full derivation).
+- `simulate()` / `run_discharge()` / `run_sweep()` — shared simulation
+  helpers used by every figure.
+- `generate_main_figures()` — Figures 1-14.
+- `generate_extension_figures()` — Figures 15-20 plus the DFN convergence
+  and Biot number diagnostics.
 
 ---
 
@@ -139,13 +184,19 @@ Running the script generates the following publication figures:
 - Figure 5 — Ecker2015 Peak Temperature Rise (ΔT)
 - Figure 6 — Ecker2015 Discharge Duration
 - Figure 7 — Ecker2015 Voltage Profiles
-- Figure 8 — Bruggeman Coefficient Sensitivity Analysis
-- Figure 9 — SPMe vs DFN Comparison
+- Figure 8 — Chen2020 Bruggeman Coefficient Sensitivity Analysis
+- Figure 9 — Chen2020 SPMe vs DFN Comparison
 - Figure 10 — Prada2013 Peak Temperature Rise (ΔT)
 - Figure 11 — Prada2013 Discharge Duration
 - Figure 12 — Prada2013 Voltage Profiles
 - Figure 13 — Prada2013 Electrolyte Concentration
 - Figure 14 — Prada2013 Extended High-C-Rate Sweep
+- Figure 15 — Chen2020 Cutoff Voltage & Initial Electrolyte Concentration Sensitivity
+- Figure 16 — Chen2020 Additional Transport-Parameter Sensitivity
+- Figure 17 — Chen2020 Bruggeman Coefficient Sensitivity, Widened Range
+- Figure 18 — Chen2020 SPMe vs. DFN Heat Source Decomposition
+- Figure 19 — Chen2020 vs. Ecker2015 Capacity-Normalized Peak Heat Generation 
+- Figure 20 — Chen2020 vs. Prada2013 OCP-Swap Counterfactual
 
 <p align="center">
   <img src="images/figure9_dfn_vs_spme.png" alt="Comparison of SPMe and DFN predictions" width="850">
