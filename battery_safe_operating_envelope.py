@@ -458,7 +458,7 @@ def generate_main_figures():
         sim = pybamm.Simulation(model, experiment=exp, parameter_values=p)
         sim.solve(solver=pybamm.CasadiSolver(mode="fast", atol=1e-9, rtol=1e-7))
         sims_chen[c_rate] = sim.solution
-    plot_concentration_profiles(sims_chen, geometry, c0, "figure4_conc.png", "Chen2020",
+    plot_concentration_profiles(sims_chen, geometry, c0, "figure4_chen_conc.png", "Chen2020",
                                  ["2.25C", "2.5C"], annotate_min=True)
 
     # Figures 5-7: Ecker2015
