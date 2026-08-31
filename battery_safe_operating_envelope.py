@@ -279,6 +279,29 @@ def save_figure(fig, filename):
     plt.close(fig)
 
 
+def baseline_variant_style(pct, max_magnitude=0.30):
+    """Consistent color/linestyle for a baseline-vs-variant series, used by
+    every figure that compares a parameter's baseline value against signed
+    percent deviations from it (Figures 13, 17, 18).
+
+    Baseline (pct == 0) is always blue, solid. Negative deviations shade
+    through green; positive deviations shade through red; in both cases a
+    larger deviation magnitude gets a darker shade, capped at
+    max_magnitude (deviations at or beyond this size all get the darkest
+    shade, so one outlier doesn't wash out the rest of the scale).
+    Returns (color, linestyle, linewidth).
+    """
+    if pct == 0:
+        return "tab:blue", "-", 2.4
+    frac = min(abs(pct) / max_magnitude, 1.0)
+    shade = 0.45 + 0.5 * frac  # keep off the near-white end of the colormap
+    cmap = plt.cm.Greens if pct < 0 else plt.cm.Reds
+    color = cmap(shade)
+    linestyle = "--" if pct < 0 else ":"
+    linewidth = 1.6 + 0.8 * frac
+    return color, linestyle, linewidth
+
+
 def plot_delta_t_heatmap(grid, label, filename, vmax=None):
     fig, ax = plt.subplots(figsize=(11, 7))
     sns.heatmap(grid, ax=ax, fmt=".1f", cmap="YlOrRd", vmin=0, vmax=vmax, **HEATMAP_KW)
@@ -635,32 +658,32 @@ def generate_cutoff_c0_sensitivity_figure():
     base_c0 = pybamm.ParameterValues("Chen2020")["Initial concentration in electrolyte [mol.m-3]"]
 
     cutoff_cases = {
-        "Baseline (2.50 V)": base_cutoff,
-        "-0.10 V (2.40 V)": base_cutoff - 0.10,
-        "+0.10 V (2.60 V)": base_cutoff + 0.10,
+        "Baseline (2.50 V)": (base_cutoff, 0.0),
+        "-0.10 V (2.40 V)": (base_cutoff - 0.10, -0.10),
+        "+0.10 V (2.60 V)": (base_cutoff + 0.10, 0.10),
     }
     c0_cases = {
-        "Baseline (1000 mol m\u207b\u00b3)": base_c0,
-        "-10% (900 mol m\u207b\u00b3)": base_c0 * 0.90,
-        "+10% (1100 mol m\u207b\u00b3)": base_c0 * 1.10,
+        "Baseline (1000 mol m\u207b\u00b3)": (base_c0, 0.0),
+        "-10% (900 mol m\u207b\u00b3)": (base_c0 * 0.90, -0.10),
+        "+10% (1100 mol m\u207b\u00b3)": (base_c0 * 1.10, 0.10),
     }
-    colors = {0: "tab:blue", 1: "tab:green", 2: "tab:red"}
-    styles = {0: "-", 1: "--", 2: ":"}
 
     fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(14, 6))
 
-    for i, (label, v_cut) in enumerate(cutoff_cases.items()):
+    for label, (v_cut, pct) in cutoff_cases.items():
+        color, ls, lw = baseline_variant_style(pct)
         dts = [run_discharge("Chen2020", c, overrides={"Lower voltage cut-off [V]": v_cut})[0]
                for c in C_RATES_SENS]
-        ax_a.plot(C_RATES_SENS, dts, color=colors[i], linestyle=styles[i],
-                  marker="o", markersize=5, linewidth=2.5, label=label)
+        ax_a.plot(C_RATES_SENS, dts, color=color, linestyle=ls, linewidth=lw,
+                  marker="o", markersize=5, label=label)
 
-    for i, (label, c0_val) in enumerate(c0_cases.items()):
+    for label, (c0_val, pct) in c0_cases.items():
+        color, ls, lw = baseline_variant_style(pct)
         dts = [run_discharge("Chen2020", c,
                               overrides={"Initial concentration in electrolyte [mol.m-3]": c0_val})[0]
                for c in C_RATES_SENS]
-        ax_b.plot(C_RATES_SENS, dts, color=colors[i], linestyle=styles[i],
-                  marker="o", markersize=5, linewidth=2.5, label=label)
+        ax_b.plot(C_RATES_SENS, dts, color=color, linestyle=ls, linewidth=lw,
+                  marker="o", markersize=5, label=label)
 
     for ax, title in [(ax_a, "(a) Cutoff Voltage Sensitivity"),
                        (ax_b, "(b) Initial Electrolyte Concentration Sensitivity")]:
@@ -700,25 +723,23 @@ def generate_transport_parameter_sensitivity_figure():
             "is_function": False,
         },
     }
-    colors = {0: "tab:blue", 1: "tab:green", 2: "tab:red"}
-    styles = {0: "-", 1: "--", 2: ":"}
-
     fig, axes = plt.subplots(2, 2, figsize=(14, 11))
     axes = axes.flatten()
 
     for panel_idx, (pname, info) in enumerate(transport_params.items()):
         ax = axes[panel_idx]
         key = info["key"]
-        for i, pct in enumerate([-0.10, 0.0, 0.10]):
+        for pct in (-0.10, 0.0, 0.10):
             label = "Baseline" if pct == 0.0 else f"{pct:+.0%}"
+            color, ls, lw = baseline_variant_style(pct)
             if info["is_function"]:
                 override_val = scale_function_parameter(info["base_value"], 1.0 + pct)
             else:
                 override_val = info["base_value"] * (1.0 + pct)
             dts = [run_discharge("Chen2020", c, overrides={key: override_val})[0] for c in C_RATES_SENS]
             logger.info("  %s, %s: dT range %.1f-%.1f K", pname, label, np.nanmin(dts), np.nanmax(dts))
-            ax.plot(C_RATES_SENS, dts, color=colors[i], linestyle=styles[i],
-                    marker="o", markersize=4, linewidth=2.2, label=label)
+            ax.plot(C_RATES_SENS, dts, color=color, linestyle=ls, linewidth=lw,
+                    marker="o", markersize=4, label=label)
         ax.axvline(x=2.5, color="gray", linestyle="--", alpha=0.5)
         ax.set(xlabel="Discharge C-Rate", ylabel="Peak \u0394T (K)")
         ax.set_title(f"({chr(97 + panel_idx)}) {pname} \u00b110%", fontweight="bold", fontsize=10.5)
@@ -741,10 +762,10 @@ def generate_bruggeman_wide_sensitivity_figure():
         "-30% (\u03b2 = 1.05)": -0.30,
         "+30% (\u03b2 = 1.95)": 0.30,
     }
-    wide_colors = plt.cm.coolwarm(np.linspace(0, 1, len(cases)))
 
     fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(14, 6))
-    for i, (label, pct) in enumerate(cases.items()):
+    for label, pct in cases.items():
+        color, ls, lw = baseline_variant_style(pct, max_magnitude=0.30)
         b_val = BRUGGEMAN_BASE * (1.0 + pct)
         dts, durs = [], []
         for c_rate in C_RATES_SENS:
@@ -754,9 +775,8 @@ def generate_bruggeman_wide_sensitivity_figure():
             )
             dts.append(dt)
             durs.append(dur)
-        ls, lw = ("-", 2.2) if pct == 0 else ("--", 1.6)
-        ax_a.plot(C_RATES_SENS, dts, color=wide_colors[i], linestyle=ls, linewidth=lw, marker="o", markersize=4, label=label)
-        ax_b.plot(C_RATES_SENS, durs, color=wide_colors[i], linestyle=ls, linewidth=lw, marker="o", markersize=4, label=label)
+        ax_a.plot(C_RATES_SENS, dts, color=color, linestyle=ls, linewidth=lw, marker="o", markersize=4, label=label)
+        ax_b.plot(C_RATES_SENS, durs, color=color, linestyle=ls, linewidth=lw, marker="o", markersize=4, label=label)
 
     for ax, ylabel, title in [(ax_a, "Peak \u0394T (K)", "(a) Peak \u0394T vs. C-Rate"),
                                (ax_b, "Discharge Duration (s)", "(b) Discharge Duration vs. C-Rate")]:
